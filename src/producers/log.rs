@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{interval, Duration};
 use crate::models::{Message, SensorData};
@@ -9,8 +10,9 @@ pub async fn run(tx: Sender<Message>) {
     loop {
         ticker.tick().await;
 
-        let gps_payload = SensorData::Log(String::from("Système OK - Ventilation active "));
-        let msg = Message::new("Log", gps_payload);
+        let log_payload = SensorData::Log(String::from("Système OK - Ventilation active "));
+
+        let msg = Message::new(Arc::from("Log"), log_payload);
 
         if tx.send(msg).await.is_err() {
             break;

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{interval, Duration};
 use crate::models::{Message, SensorData};
@@ -13,9 +14,9 @@ pub async fn run(tx: Sender<Message>) {
         let imu_payload = SensorData::IMU { x: 0.1, y: 9.81, z: -0.2 };
 
         // On enveloppe dans le Message
-        let msg = Message::new("imu_primary", imu_payload);
+        let msg = Message::new(Arc::from("imu_primary"), imu_payload);
 
-        if tx.send(msg).await.is_err() {
+        if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = tx.try_send(msg) {
             break; // Si le récepteur est mort, on arrête le thread
         }
     }
