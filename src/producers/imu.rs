@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{interval, Duration};
-use crate::models::{Message, SensorData};
+use crate::models::{BackpressureStrategy, Message, SensorData};
 
-pub async fn run(tx: Sender<Message>) {
+pub async fn run(tx: Sender<Message>, strategy: BackpressureStrategy) {
     // 200 Hz = 5ms
     let mut ticker = interval(Duration::from_millis(5));
 
@@ -16,8 +16,8 @@ pub async fn run(tx: Sender<Message>) {
         // On enveloppe dans le Message
         let msg = Message::new(Arc::from("imu_primary"), imu_payload);
 
-        if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = tx.try_send(msg) {
-            break; // Si le récepteur est mort, on arrête le thread
+        if strategy.send(&tx, msg).await.is_err() {
+            break;
         }
     }
 }

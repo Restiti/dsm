@@ -1,5 +1,4 @@
 // src/pipeline/data_ingestor.rs
-use tokio::time::{sleep, Duration};
 use tokio::sync::mpsc::Receiver;
 // Importation cruciale : on a besoin des deux !
 use crate::models::{Message, SensorData};

@@ -1,5 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::mpsc::Sender;
 
 #[derive(Debug)]
 pub enum SensorData {
@@ -23,6 +25,31 @@ impl Message {
             source_id: source_id,
             timestamp: since_the_epoch.as_millis() as u64,
             data,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BackpressureStrategy {
+    Block, // Utilise .send().await (ralentit le producteur)
+    Drop,  // Utilise .try_send() (jette la donnée si plein)
+}
+impl BackpressureStrategy {
+    /// Gère l'envoi d'un message selon la stratégie choisie
+    pub async fn send(&self, tx: &Sender<Message>, msg: Message) -> Result<(), ()> {
+        match self {
+            BackpressureStrategy::Block => {
+                tx.send(msg).await.map_err(|_| ())
+            }
+            BackpressureStrategy::Drop => {
+                if let Err(e) = tx.try_send(msg) {
+                    if let TrySendError::Closed(_) = e {
+                        return Err(());
+                    }
+                    // Si c'est Full, on ignore (Drop), mais on retourne Ok
+                }
+                Ok(())
+            }
         }
     }
 }
