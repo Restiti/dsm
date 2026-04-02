@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
@@ -36,20 +37,48 @@ pub enum BackpressureStrategy {
 }
 impl BackpressureStrategy {
     /// Gère l'envoi d'un message selon la stratégie choisie
-    pub async fn send(&self, tx: &Sender<Message>, msg: Message) -> Result<(), ()> {
+    pub async fn send(&self, tx: &Sender<Message>, msg: Message, metrics: &Metrics) -> Result<(), ()> {
         match self {
             BackpressureStrategy::Block => {
-                tx.send(msg).await.map_err(|_| ())
-            }
-            BackpressureStrategy::Drop => {
-                if let Err(e) = tx.try_send(msg) {
-                    if let TrySendError::Closed(_) = e {
-                        return Err(());
-                    }
-                    // Si c'est Full, on ignore (Drop), mais on retourne Ok
-                }
+                if tx.send(msg).await.is_err() { return Err(()); }
+                metrics.total_sent.fetch_add(1, Ordering::Relaxed);
                 Ok(())
             }
+            BackpressureStrategy::Drop => {
+                match tx.try_send(msg) {
+                    Ok(_) => {
+                        metrics.total_sent.fetch_add(1, Ordering::Relaxed);
+                        Ok(())
+                    }
+                    Err(TrySendError::Full(_)) => {
+                        metrics.total_dropped.fetch_add(1, Ordering::Relaxed);
+                        Ok(())
+                    }
+                    Err(TrySendError::Closed(_)) => Err(()),
+                }
+            }
         }
+    }
+}
+
+pub struct Metrics {
+    pub total_sent: AtomicU64,
+    pub total_dropped: AtomicU64,
+}
+
+impl Metrics {
+    pub fn new() -> Self {
+        Self {
+            total_sent: AtomicU64::new(0),
+            total_dropped: AtomicU64::new(0),
+        }
+    }
+
+    // Un petit helper pour lire les valeurs
+    pub fn get_stats(&self) -> (u64, u64) {
+        (
+            self.total_sent.load(Ordering::Relaxed),
+            self.total_dropped.load(Ordering::Relaxed),
+        )
     }
 }

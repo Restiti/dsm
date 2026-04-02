@@ -2,9 +2,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{interval, Duration};
 use tokio_util::sync::CancellationToken;
-use crate::models::{BackpressureStrategy, Message, SensorData};
+use crate::models::{BackpressureStrategy, Message, Metrics, SensorData};
 
-pub async fn run(tx: Sender<Message>, strategy: BackpressureStrategy, token1: CancellationToken) {
+pub async fn run(tx: Sender<Message>, strategy: BackpressureStrategy, token1: CancellationToken, metrics: Arc<Metrics>) {
     let mut ticker = interval(Duration::from_millis(100));
     let source_id: Arc<str> = Arc::from("gps_u_blox");
 
@@ -14,7 +14,7 @@ pub async fn run(tx: Sender<Message>, strategy: BackpressureStrategy, token1: Ca
                 let gps_payload = SensorData::GPS { lat: 48.8566, lon: 2.3522 };
                 let msg = Message::new(Arc::clone(&source_id), gps_payload);
 
-                if strategy.send(&tx, msg).await.is_err() {
+                if strategy.send(&tx, msg, &metrics).await.is_err() {
                     break;
                 }
             }

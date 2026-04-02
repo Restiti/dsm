@@ -2,6 +2,7 @@ mod models;
 mod producers; // Rust cherche producers/mod.rs
 mod pipeline;
 
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use crate::models::BackpressureStrategy;
@@ -11,11 +12,12 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let token = CancellationToken::new();
     let (tx, rx) = mpsc::channel(100);
+    let metrics = Arc::new(models::Metrics::new());
 
     // On lance les modules
-    tokio::spawn(producers::imu::run(tx.clone(), BackpressureStrategy::Drop, token.clone()) );
-    tokio::spawn(producers::gps::run(tx.clone(), BackpressureStrategy::Drop, token.clone()));
-    tokio::spawn(producers::log::run(tx.clone(), BackpressureStrategy::Block, token.clone()));
+    tokio::spawn(producers::imu::run(tx.clone(), BackpressureStrategy::Drop, token.clone(), Arc::clone(&metrics)) );
+    tokio::spawn(producers::gps::run(tx.clone(), BackpressureStrategy::Drop, token.clone(), Arc::clone(&metrics)));
+    tokio::spawn(producers::log::run(tx.clone(), BackpressureStrategy::Block, token.clone(), Arc::clone(&metrics)));
 
     // Simulation d'un signal d'arrêt (ex: Ctrl+C ou après 10 secondes)
     let cl_token = token.clone();
@@ -30,5 +32,5 @@ async fn main() {
     drop(tx);
 
     // Lancement du consommateur
-    pipeline::data_ingestor::DataIngestor::process(rx).await;
+    pipeline::data_ingestor::DataIngestor::process(rx, metrics).await;
 }

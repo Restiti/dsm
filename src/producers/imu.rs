@@ -2,11 +2,11 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::time::{interval, Duration};
 use tokio_util::sync::CancellationToken;
-use crate::models::{BackpressureStrategy, Message, SensorData};
+use crate::models::{BackpressureStrategy, Message, Metrics, SensorData};
 
-pub async fn run(tx: Sender<Message>, strategy: BackpressureStrategy,  token1: CancellationToken) {
+pub async fn run(tx: Sender<Message>, strategy: BackpressureStrategy, token1: CancellationToken, metrics: Arc<Metrics>) {
     // 200 Hz = 5ms
-    let mut ticker = interval(Duration::from_millis(5));
+    let mut ticker = interval(Duration::from_millis(1));
     let source_id: Arc<str> = Arc::from("imu_primary");
 
     loop {
@@ -18,7 +18,7 @@ pub async fn run(tx: Sender<Message>, strategy: BackpressureStrategy,  token1: C
                 // On enveloppe dans le Message
                 let msg = Message::new(Arc::clone(&source_id), imu_payload);
 
-                if strategy.send(&tx, msg).await.is_err() {
+                if strategy.send(&tx, msg, &metrics).await.is_err() {
                     break;
                 }
             }
