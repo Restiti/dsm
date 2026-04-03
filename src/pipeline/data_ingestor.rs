@@ -1,23 +1,31 @@
 use std::sync::Arc;
-// src/pipeline/data_ingestor.rs
 use tokio::sync::mpsc::Receiver;
-// Importation cruciale : on a besoin des deux !
-use crate::models::{Message, Metrics, SensorData};
+use tokio::time::{Instant, Duration};
+use crate::models::{Message, Metrics};
+use crate::pipeline::parquet_writer::ParquetFileHandler;
+use crate::processing::arrow_converter::ArrowConverter;
 
 pub struct DataIngestor;
 
 impl DataIngestor {
-    // On reçoit le "Message" (l'enveloppe avec timestamp et source_id)
     pub async fn process(mut rx: Receiver<Message>, metrics: Arc<Metrics>) {
         tracing::info!("Démarrage de l'ingestion...");
-        let mut count = 0;
+        let batch_size = 1000;
+        let mut converter = ArrowConverter::new(batch_size);
+        let mut last_flush = Instant::now();
+        let mut total_processed = 0;
+        let session_id = chrono::Utc::now().timestamp().to_string();
+        let writer = Arc::new(ParquetFileHandler::new(&session_id));
+        let mut part_count = 0;
+
         while let Some(msg) = rx.recv().await {
-            count += 1;
+
+            converter.add_message(msg);
+            total_processed += 1;
             // Toutes les 1000 réceptions, on fait un bilan de santé
-            if count % 1000 == 0 {
+            if total_processed % 1000 == 0 {
                 let (sent, dropped) = metrics.get_stats();
                 let loss_rate = (dropped as f64 / (sent + dropped) as f64) * 100.0;
-
                 tracing::warn!(
                     target: "system::health",
                     "Stats: Recus={}, Droppés={}, Perte={:.2}%",
@@ -25,22 +33,22 @@ impl DataIngestor {
                 );
             }
 
-            // C'est ICI qu'on utilise SensorData défini dans models.rs
-            // On fait un match sur le CHAMP 'data' du message
-            match msg.data {
-                SensorData::IMU { x, y, z } => {
+            if converter.rows_count() >= batch_size || last_flush.elapsed() >= Duration::from_secs(1) {
+                if converter.rows_count() > 0 {
+                    let batch = converter.finish();
                     tracing::info!(
-                        target: "sensor::imu",
-                        id = %msg.source_id, // On utilise enfin les métadonnées !
-                        time = %msg.timestamp,
-                        x, y, z
+                        target: "pipeline::arrow",
+                        "RecordBatch créé : {} lignes, {} colonnes",
+                        batch.num_rows(), batch.num_columns()
                     );
-                }
-                SensorData::GPS { lat, lon } => {
-                    tracing::info!(target: "sensor::gps", id = %msg.source_id, lat, lon);
-                }
-                SensorData::Log(text) => {
-                    tracing::info!(target: "system::log", msg = %text);
+
+                    let writer_clone = Arc::clone(&writer);
+
+                    tokio::spawn(async move {
+                        writer_clone.save_batch(batch, part_count).await;
+                    });
+                    last_flush = Instant::now();
+                    part_count +=1;
                 }
             }
         }

@@ -1,6 +1,7 @@
 mod models;
 mod producers; // Rust cherche producers/mod.rs
 mod pipeline;
+mod processing;
 
 use std::sync::Arc;
 use tokio::sync::mpsc;
