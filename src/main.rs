@@ -2,6 +2,7 @@ mod models;
 mod producers; // Rust cherche producers/mod.rs
 mod pipeline;
 mod processing;
+mod query_engine;
 
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -33,5 +34,33 @@ async fn main() {
     drop(tx);
 
     // Lancement du consommateur
-    pipeline::data_ingestor::DataIngestor::process(rx, metrics).await;
+    let ingestor_handle = tokio::spawn(async move {
+        pipeline::data_ingestor::DataIngestor::process(rx, metrics).await;
+    });
+
+    // On attend que les fichiers soient fermés
+    ingestor_handle.await.unwrap();
+
+    let engine = query_engine::QueryEngine::new();
+
+    // On pointe vers le dossier parent qui contient toutes les sessions
+    if let Err(e) = engine.register_telemetry_data("./data/").await {
+        eprintln!("Erreur lors de l'enregistrement des données : {}", e);
+        return;
+    }
+
+    // Exemple de requête analytique
+    let sql = "
+        SELECT
+            source_id,
+            COUNT(*) as nb_messages,
+            AVG(gps_lat) as avg_lat
+        FROM telemetry
+        GROUP BY source_id
+    ";
+
+    if let Err(e) = engine.query(sql).await {
+        eprintln!("Erreur de requête : {}", e);
+    }
+
 }
