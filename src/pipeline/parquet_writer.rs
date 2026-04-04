@@ -13,10 +13,11 @@ pub struct ParquetFileHandler {
 
 impl ParquetFileHandler {
     pub fn new(session_id: &str, schema: SchemaRef) -> Self {
-        let dir = format!("data/session_{}", session_id);
-        create_dir_all(&dir).expect("Impossible de créer le dossier");
+        let dir = "data";
+        create_dir_all(dir).expect("Impossible de créer le dossier");
 
-        let file_path = PathBuf::from(dir).join("data_stream.parquet");
+        let file_name = format!("telemetry_{}.parquet", session_id);
+        let file_path = PathBuf::from(dir).join(file_name);
 
         Self {
             writer: None,
