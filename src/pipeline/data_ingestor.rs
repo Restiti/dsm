@@ -15,8 +15,10 @@ impl DataIngestor {
         let mut last_flush = Instant::now();
         let mut total_processed = 0;
         let session_id = chrono::Utc::now().timestamp().to_string();
-        let writer = Arc::new(ParquetFileHandler::new(&session_id));
-        let mut part_count = 0;
+
+
+        let schema = converter.get_schema(); // Ajoute un getter dans ArrowConverter
+        let mut writer_handler = ParquetFileHandler::new(&session_id, schema);
 
         while let Some(msg) = rx.recv().await {
 
@@ -42,15 +44,12 @@ impl DataIngestor {
                         batch.num_rows(), batch.num_columns()
                     );
 
-                    let writer_clone = Arc::clone(&writer);
+                    writer_handler.write_batch(batch);
 
-                    tokio::spawn(async move {
-                        writer_clone.save_batch(batch, part_count).await;
-                    });
                     last_flush = Instant::now();
-                    part_count +=1;
                 }
             }
         }
+        writer_handler.close();
     }
 }

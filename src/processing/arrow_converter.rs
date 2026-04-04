@@ -111,6 +111,10 @@ impl ArrowConverter {
             .expect("Échec de la création du RecordBatch")
     }
 
+    pub fn get_schema(&self) -> SchemaRef {
+        Arc::clone(&self.schema)
+    }
+
     pub fn rows_count(&self) -> usize {
         self.current_rows
     }
